@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>План дільниць</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1f5f8b">
+<style>
+  /* Лише екран запуску й налаштування; сторінку плану малює код із таблиці */
+  :root { --bg: #eef0ee; --surface: #fff; --ink: #1c2220; --muted: #5d6763; --line: #d5dad7; --accent: #1f5f8b; --warn: #b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #141917; --surface: #1d2421; --ink: #e4e9e6; --muted: #9aa5a0; --line: #2f3935; --accent: #7cb8e4; --warn: #ff8a80; color-scheme: dark; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #boot { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; box-sizing: border-box; }
+  #boot .card { width: 100%; max-width: 440px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; display: flex; flex-direction: column; gap: 12px; }
+  #boot h1 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  #boot h1 img { width: 36px; height: 36px; border-radius: 8px; }
+  #boot p { margin: 0; color: var(--muted); }
+  #boot p.err { color: var(--warn); font-weight: 600; }
+  #boot input { font: 14px ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); width: 100%; box-sizing: border-box; }
+  #boot button { font: 600 15px system-ui, sans-serif; padding: 10px 16px; border-radius: 9px; border: 0; background: var(--accent); color: #fff; cursor: pointer; align-self: flex-start; }
+  #boot .spin { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s 0.9s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="boot"><div class="card"><h1><img src="icon-192.png" alt="">План дільниць</h1><div class="spin"></div><p id="boot-msg">Завантажую…</p></div></div>
+<script>
+(function () {
+  // Додаток «План дільниць» для телефона: бере код сторінки і останній знімок даних з Google-таблиці нотаток.
+  // Знімок надсилає план, відкритий на робочому ПК (галочка «📱 на телефон»).
+  var K = "plan-app-gs", KC = "plan-app-code", KS = "plan-app-snap";
+  var RE = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
+  var ls = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  };
+  var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); };
+  var setupWanted = /(^#|&)setup\b/.test(location.hash);
+  // Адреса таблиці приходить у посиланні з QR-коду (#u=…) і зберігається на телефоні
+  var m = location.hash.match(/[#&]u=([^&]+)/);
+  if (m) {
+    var u0 = decodeURIComponent(m[1]);
+    if (RE.test(u0)) ls.set(K, u0);
+  }
+  if (m || setupWanted) history.replaceState(null, "", location.pathname + location.search);
+  var U = ls.get(K) || "";
+
+  function card(html) {
+    document.body.innerHTML = '<div id="boot"><div class="card"><h1><img src="icon-192.png" alt="">План дільниць</h1>' + html + "</div></div>";
+  }
+  function fail(t) {
+    card('<p class="err">' + esc(t) + '</p><button type="button" id="again">Спробувати ще</button>');
+    document.getElementById("again").onclick = function () { location.reload(); };
+  }
+  function setup(note) {
+    card((note ? '<p class="err">' + esc(note) + "</p>" : "") + "<p>Вставте адресу вебзастосунку з Google-таблиці нотаток (закінчується на /exec). Простіше — відкрийте додаток з QR-коду на сторінці встановлення, тоді адреса підставиться сама.</p>" + '<input id="gs" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(U) + '"><button type="button" id="save">Зберегти</button>');
+    document.getElementById("save").onclick = function () {
+      var v = document.getElementById("gs").value.trim();
+      if (!RE.test(v)) return setup("Адреса має бути вигляду https://script.google.com/macros/s/…/exec");
+      U = v, ls.set(K, v), location.reload();
+    };
+  }
+  function run(code, snap) {
+    window.__planApp = null;
+    (0, eval)(code);
+    if (!window.__planApp || !window.__planApp.mount) throw new Error("таблиця віддала не той код — оновіть Plan.gs в Apps Script");
+    ls.set("plan-dilnyts-notes-url", U);
+    window.__planApp.mount(snap);
+    // Текст статусу «Дані IdeaCore: …» — щоб повернути його після перевірки без змін
+    var e = document.getElementById("upd-status");
+    e && (e.dataset.txt = e.textContent, e.dataset.cls = e.className);
+  }
+  function get(a) {
+    return fetch(U + "?a=" + a + "&t=" + Date.now()).then(function (r) {
+      if (!r.ok) throw new Error("таблиця відповіла помилкою " + r.status);
+      return r.text();
+    });
+  }
+  var shown = "";
+  function load() {
+    var st = document.getElementById("upd-status");
+    window.__planBusy = 1;
+    st && (st.textContent = "Оновлюю…", st.className = "upd busy");
+    return Promise.all([get("app"), get("snap")]).then(function (res) {
+      var code = res[0], snap;
+      try { snap = JSON.parse(res[1]); } catch (e) { throw new Error(/<html/i.test(res[1]) ? "таблиця відповіла сторінкою входу — у розгортанні має бути доступ «Будь-хто»" : "незрозуміла відповідь таблиці"); }
+      if (!snap.ok) throw new Error(snap.error || "таблиця не віддала дані");
+      window.__planBusy = 0;
+      if (!snap.data) {
+        if (!shown) card('<p>Даних ще немає.</p><p>На робочому ПК відкрийте IdeaCore, натисніть закладку «План дільниць» і поставте галочку <b>«📱 на телефон»</b> угорі плану. Потім натисніть «Оновити» тут.</p><button type="button" id="again">Оновити</button>'), document.getElementById("again").onclick = function () { location.reload(); };
+        return;
+      }
+      var key = code.length + "|" + snap.at + "|" + (snap.data.loadedAt || "");
+      ls.set(KC, code) && ls.set(KS, res[1]);
+      if (key === shown && window.__MXDATA) {
+        // Нічого нового: лише відмітити час перевірки
+        window.__MXDATA.fetchedAt = Date.now();
+        st = document.getElementById("upd-status");
+        st && st.dataset.txt && (st.textContent = st.dataset.txt, st.className = st.dataset.cls || "upd");
+        return;
+      }
+      shown = key, run(code, snap);
+    }).catch(function (e) {
+      window.__planBusy = 0;
+      var s2 = document.getElementById("upd-status");
+      if (s2) s2.textContent = "Не вдалося оновити: " + (e.message || e) + " · показано попередні дані", s2.className = "upd err";
+      else fail("Не вдалося завантажити план: " + (e.message || e));
+    });
+  }
+  // Кнопка «Оновити» і автоперевірка в плані викликають це: перечитати знімок з таблиці
+  window.__planMain = function () { return load(); };
+
+  if (!U || setupWanted) return setup();
+  // Спершу — миттєво з пам'яті телефона, потім — свіже з таблиці
+  var c = ls.get(KC), s = ls.get(KS);
+  if (c && s) {
+    try {
+      var snap0 = JSON.parse(s);
+      run(c, snap0), shown = c.length + "|" + snap0.at + "|" + (snap0.data && snap0.data.loadedAt || "");
+    } catch (e) { shown = ""; }
+  }
+  load();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+})();
+</script>
+</body>
+</html>
